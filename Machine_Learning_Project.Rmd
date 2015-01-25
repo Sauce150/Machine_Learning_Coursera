@@ -1,0 +1,58 @@
+---
+title: "Machine_Learning_Project"
+author: "Mike Seelaus"
+date: "January 25, 2015"
+output: html_document
+---
+  
+This report was created for the course project as part of the Practical Machine Learning Coursera course in the Data Science Specialization.  Given a dataset, the task was to create an algorithm to predict how well a workout movement was performed given a test dataset (see citation at the end of this report).  Due to the size of this dataset (160 variables including the outcome), it was necessary to look for ways to choose the necessary variables for modeling.  The first attempt used the near zero variance measure to determine suitability for analysis.  This produced a set of 60 variables that were deemed to be of littel use.  However, this still left 100 variables with numerous NA values throughout the dataset.  Further analysis revealed that the testing dataset did not contain any values for a number of variables, including the ones already removed due to near zero variance.  These same variables also accounted for all of the NA values in the training set as well.  For simplicity's sake, an attempt was made to fit a model that removed the entirety of those variables form the training set.  This had the benefit of eliminating the near zero variance variables as well as any NA values.  It would no longer be necessary to worry about imputation of missing values.  Additinally, an index variable and the timestamp variables were removed before fitting a model.  
+  
+For model fitting, it was determined that a random forest methodology would likely be a good attempt for this dataset.  The ultimate goal of the exercise is prediction accuracy and so sacrificing some of the interpretability of the model output was deemed acceptable.  Random forest models have a reputation for accuracy.  The training dataset provided was split into training and testing sets using random sampling with 70% placed into the training set.  The training set was slimmed to the relevant variables as discussed above and then fit using the randomForest package in R.  
+  
+Using random forest cross-validation for feature selection (using 5 folds) revealed that using 53 predictors was overfitting the model.  The output suggested we could easily halve (or even quarter) the number of variables and still get comparable accuracy results.  In order to adjust for this potential overfitting, the number of variables was reduced to the top seven as ranked by importance (Gini).  The model was refit and the algorithm was used against the test dataset.  The resulting confusion matrix is provided below.  It shows an error rate of 0.15%.  This is the expected out of sample error rate.  
+  
+The complete code for this analysis is reproduced here.  The algorithm correctly predicted all 20 validation samples provided by the instructors of this course.
+  
+```{r}
+library(caret)
+library(randomForest)
+data <- read.csv("pml-training.csv")
+validating <- read.csv("pml-testing.csv")
+set.seed(333888)
+inTrain <- createDataPartition(y = data$classe, p = 0.7, list = FALSE)
+training <- data[inTrain,]
+testing <- data[-inTrain,]
+x <- sapply(validating, function(x)all(is.na(x)))
+to_remove <- names(x[x==TRUE])
+slim_training <- training[,!(names(training) %in% to_remove)]
+slim_training <- slim_training[,7:60]
+fitMod <- randomForest(classe ~ ., data = slim_training)
+cv <- rfcv(slim_training[,-54], slim_training[,54])
+```
+  
+Here are the resulting error rates for various numbers of variables after running the cross-validation.
+  
+```{r}
+with(cv, plot(n.var, error.cv, log="x", type="o", lwd=2))
+```
+  
+Finally, the model confusion matrix using seven predictors and run against the test dataset.
+  
+```{r}
+f <- as.data.frame(importance(fitMod))
+f <- f[order(-f$MeanDecreaseGini), , drop = FALSE]
+to_keep <- rownames(f)[1:7]
+new_training <- slim_training[,c(to_keep,"classe")]
+set.seed(333999)
+fitMod2 <- randomForest(classe ~ ., data = new_training)
+pred <- predict(fitMod2, testing)
+confusionMatrix(pred, testing$classe)
+```
+  
+As you can see, we have maintained a very high accuracy rate with only a fraction of the predictors, helping to reduce concerns of overfitting the data.
+  
+### Citation  
+  
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3Ps021QVr
